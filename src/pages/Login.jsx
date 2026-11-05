@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { userApi } from '../Data/ConexionUser'
 import { documentoApi } from '../Data/ConexionBoletas'
+import { GoogleLogin } from '@react-oauth/google'
+import { jwtDecode } from "jwt-decode"
 
 function Login({ onLogin }) {
     const navigate = useNavigate()
@@ -33,7 +35,7 @@ function Login({ onLogin }) {
                         setUsuarioActual(usuarioFresquito)
                         localStorage.setItem('usuarioLogueado', JSON.stringify(usuarioFresquito))
 
-                        // 2. Traemos TODAS las boletas/documentos de MongoDB (al igual que en BoletasAdmind)
+                        // 2. Traemos TODAS las boletas/documentos de MongoDB
                         const todasLasBoletas = await documentoApi.listarDocumentos()
                         
                         // 3. Filtramos solo aquellas boletas cuyos tickets pertenezcan al historial del usuario
@@ -116,6 +118,46 @@ function Login({ onLogin }) {
         }
     }
 
+    // 2. Función para manejar el login exitoso con Google
+    const handleGoogleSuccess = async (credentialResponse) => {
+        try {
+            const decoded = jwtDecode(credentialResponse.credential)
+            const correoGoogle = decoded.email
+
+            // Buscamos si el correo de Google existe en tu base de datos
+            const usuarrio = await userApi.getUserByEmail(correoGoogle)
+
+            if (usuarrio) {
+                const esAdmin = usuarrio.rol === 'administrador'
+                setMensajeExito(true)
+                setErrors({})
+                
+                localStorage.setItem('usuarioLogueado', JSON.stringify(usuarrio))
+                setUsuarioActual(usuarrio)
+
+                if (onLogin) {
+                    onLogin(usuarrio)
+                }
+                
+                setTimeout(() => {
+                    if (esAdmin) {
+                        navigate('/admin')
+                    } else {
+                        navigate('/')
+                    }
+                }, 1500)
+            } else {
+                // Si Google nos da OK pero el correo no está en tu DB
+                setErrors({ correo: 'Este correo de Google no está registrado en nuestro sistema. Por favor, regístrate primero.' })
+                setMensajeExito(false)
+            }
+        } catch (error) {
+            console.error("Error validando el usuario de Google en la base de datos:", error)
+            setErrors({ correo: 'Error al iniciar sesión con Google. ¿El usuario está registrado?' })
+            setMensajeExito(false)
+        }
+    }
+
     const handleCerrarSesion = () => {
         localStorage.removeItem('usuarioLogueado')
         setUsuarioActual(null)
@@ -126,12 +168,11 @@ function Login({ onLogin }) {
         navigate('/Login')
     }
 
-    // Formateador de moneda chilena
     const formatear = (valor) => {
         return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(valor || 0)
     }
 
-    // SI YA HAY UN USUARIO LOGUEADO, MOSTRAMOS SU PANEL Y EL ACORDEÓN CON LAS BOLETAS REALES
+    // SI YA HAY UN USUARIO LOGUEADO, MOSTRAMOS SU PANEL
     if (usuarioActual) {
         const listaTickets = usuarioActual.historialCompras || []
 
@@ -165,7 +206,6 @@ function Login({ onLogin }) {
                             ) : listaTickets.length > 0 ? (
                                 <div className="accordion shadow-sm" id="accordionHistorial">
                                     {listaTickets.map((idTicket, index) => {
-                                        // Buscamos la coincidencia exacta dentro de las boletas traídas de MongoDB
                                         const boletaMatcheada = historialDetallado.find(
                                             b => (b.tikect && b.tikect === idTicket) || (b._id && b._id === idTicket)
                                         )
@@ -289,6 +329,12 @@ function Login({ onLogin }) {
                                     ¡Inicio de sesión exitoso! Redirigiendo...
                                 </div>
                             )}
+                            
+                            {errors.correo && typeof errors.correo === 'string' && errors.correo.includes('Google') && (
+                                <div className="alert alert-danger text-center" role="alert">
+                                    {errors.correo}
+                                </div>
+                            )}
 
                             <form onSubmit={handleSubmit} noValidate>
                                 
@@ -302,7 +348,7 @@ function Login({ onLogin }) {
                                         className={`form-control border-secondary ${errors.correo ? 'is-invalid' : ''}`}
                                         placeholder="ejemplo@duoc.cl"
                                     />
-                                    {errors.correo && <div className="invalid-feedback">{errors.correo}</div>}
+                                    {errors.correo && !errors.correo.includes('Google') && <div className="invalid-feedback">{errors.correo}</div>}
                                 </div>
 
                                 <div className="mb-4">
@@ -326,6 +372,25 @@ function Login({ onLogin }) {
                                     >
                                         Iniciar sesión
                                     </button>
+                                </div>
+                                
+                                {/* 3. Separador visual y Botón de Google */}
+                                <div className="d-flex align-items-center my-3">
+                                    <hr className="flex-grow-1 border-secondary" />
+                                    <span className="mx-2 text-muted small fw-bold">O INGRESA CON</span>
+                                    <hr className="flex-grow-1 border-secondary" />
+                                </div>
+                                
+                                <div className="d-flex justify-content-center mb-3">
+                                    <GoogleLogin
+                                        onSuccess={handleGoogleSuccess}
+                                        onError={() => {
+                                            setErrors({ correo: 'Error de comunicación con Google.' })
+                                        }}
+                                        theme="filled_blue"
+                                        shape="pill"
+                                        text="signin_with"
+                                    />
                                 </div>
 
                                 <div className="text-center mt-4 border-top pt-3 border-secondary-subtle">
