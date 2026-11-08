@@ -1,130 +1,107 @@
-// URL base de tu API de usuarios (ajusta el puerto/ruta según corresponda)
-const API_URL = 'https://bakneduserf2.onrender.com/api'; 
-
-/**
- * @typedef {Object} CreateUser
- * @property {string} nombre
- * @property {string} [apellido]
- * @property {string} [rol]
- * @property {string} email
- * @property {string} paswword
- */
-
-/**
- * @typedef {Object} UpdateUser
- * @property {string} nombre
- * @property {string} [apellido]
- * @property {string} [rol]
- * @property {string} email
- * @property {string} paswword
- * @property {any} historialCompras
- */
+const API_URL = 'http://localhost:8080/api/usuarios';
 
 export const userApi = {
-    // 1. Obtener todos los usuarios -> GET /users
+
+    // Obtener todos los usuarios
     async getUsers() {
-        const response = await fetch(`${API_URL}/users`);
-        const json = await response.json();
-        if (!json.success) throw new Error("Error al obtener usuarios");
-        return json.data; // Retorna el array de dtoResponse
+        const response = await fetch(API_URL);
+
+        if (!response.ok) {
+            throw new Error('Error al obtener usuarios');
+        }
+
+        return await response.json();
     },
 
-    // 2. Obtener roles -> GET /roles
-    async getRoles() {
-        const response = await fetch(`${API_URL}/roles`);
-        const json = await response.json();
-        if (!json.succes && !json.success) throw new Error("Error al obtener roles");
-        return json.data;
-    },
-
-    // 3. Obtener usuario por email -> GET /user/:email
+    // Obtener usuario por correo
     async getUserByEmail(email) {
-        const response = await fetch(`${API_URL}/user/${email}`);
-        const json = await response.json();
-        if (!json.success) throw new Error(`No se encontró el usuario con email: ${email}`);
-        return json.data;
+        const response = await fetch(
+            `${API_URL}/email/${encodeURIComponent(email)}`
+        );
+
+        if (!response.ok) {
+            throw new Error('No se encontró el usuario');
+        }
+
+        return await response.json();
     },
 
-    // 4. Crear usuario -> POST /user
-    /** @param {CreateUser} userData */
+    // Crear usuario
     async createUser(userData) {
-        const response = await fetch(`${API_URL}/user`, {
+        const response = await fetch(API_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(userData),
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                nombre: userData.nombre,
+                apellido: userData.apellido || '',
+                email: userData.email,
+                password: userData.password || userData.paswword,
+                rol: 'cliente'
+            })
         });
-        const json = await response.json();
-        if (!json.success) throw new Error(json.message || "Error al crear usuario");
-        return json.data;
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                typeof data === 'string'
+                    ? data
+                    : 'Error al crear usuario'
+            );
+        }
+
+        return data;
     },
 
-    // 5. Actualizar usuario -> PUT /user/Update
-    /** @param {UpdateUser} userData */
-    // Ejemplo dentro de tu archivo de conexión (ej. ConexionUser.js)
-async updateUser(userData) {
-    const response = await fetch(`${API_URL}/user/Update`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData),
-    });
-    
-    const json = await response.json();
-    
-    // Si la API responde con error, lanzamos un Error con el mensaje exacto del backend
-    if (!json.success) {
-        const mensajeError = json.message || (json.errors ? json.errors.join(', ') : 'Error al actualizar usuario');
-        throw new Error(mensajeError);
-    }
-    
-    return json.data;
-},
-    
-/** @param {any} userData */
-    async deleteUser(userData) {
-        // Aseguramos que enviamos un objeto JSON con la estructura que el backend espera en req.body
-        const bodyPayload = typeof userData === 'string' ? { email: userData } : userData;
-
-        const response = await fetch(`${API_URL}/users/delete`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(bodyPayload),
+    // Actualizar usuario
+    async updateUser(id, userData) {
+        const response = await fetch(`${API_URL}/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(userData)
         });
-        
-        const json = await response.json();
-        if (!json.success) throw new Error(json.message || "Error al eliminar usuario");
-        return json.data;
+
+        if (!response.ok) {
+            throw new Error('Error al actualizar usuario');
+        }
+
+        return await response.json();
     },
-    
-    // 7. Validar login -> POST /user/login
-    async login(email, paswword) {
-        const response = await fetch(`${API_URL}/user/login`, {
+
+    // Eliminar usuario
+    async deleteUser(id) {
+        const response = await fetch(`${API_URL}/${id}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            throw new Error('Error al eliminar usuario');
+        }
+
+        return true;
+    },
+
+    // Iniciar sesión
+    async login(email, password) {
+        const response = await fetch(`${API_URL}/login`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, paswword }),
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email,
+                password
+            })
         });
-        const json = await response.json();
-        if (!json.success) throw new Error(json.message || "Credenciales inválidas");
-        return json.data;
-    },
 
-    async agregarHistorialCompra(email, ticket) {
-    try {
-      const response = await fetch(`${API_URL}/user/historial`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, ticket }),
-      })
+        if (!response.ok) {
+            throw new Error('Correo o contraseña incorrectos');
+        }
 
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.message || 'Error al actualizar el historial de compras')
-      }
-      return data.data
-    } catch (error) {
-      console.error('Error en usuarioApi.agregarHistorialCompra:', error)
-      throw error
+        return await response.json();
     }
-  }
 };

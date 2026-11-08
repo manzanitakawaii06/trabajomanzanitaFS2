@@ -1,38 +1,53 @@
-import { useState, useEffect } from 'react'
-import { noticiaApi } from '../Data/ConexionBlog'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { noticiaApi } from '../Data/ConexionBlog'
+
+const FORM_INICIAL = {
+  titulo: '',
+  slug: '',
+  resumen: '',
+  imagenPortada: '',
+  categoria: 'Novedades',
+  autor: 'Equipo AnimeWord',
+  destacado: false
+}
+
+const SECCION_INICIAL = { tipo: 'parrafo', contenido: '', caption: '' }
+
+function generarSlug(texto) {
+  return texto
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 -]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+}
 
 function GestionNoticias() {
   const navigate = useNavigate()
+
   const [noticias, setNoticias] = useState([])
   const [seleccionada, setSeleccionada] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState('')
 
-  const [tarjetaForm, setTarjetaForm] = useState({
-    titulo: '',
-    slug: '',
-    resumen: '',
-    imagenPortada: '',
-    categoria: 'Novedades',
-    autor: 'Equipo AnimeWord',
-    destacado: false
-  })
-
-  const [previewImagen, setPreviewImagen] = useState('')
-  const [isDragging, setIsDragging] = useState(false)
-
+  const [tarjetaForm, setTarjetaForm] = useState({ ...FORM_INICIAL })
   const [introduccion, setIntroduccion] = useState('')
-  const [secciones, setSecciones] = useState([
-    { tipo: 'parrafo', contenido: '', caption: '' }
-  ])
+  const [secciones, setSecciones] = useState([{ ...SECCION_INICIAL }])
 
   const cargarNoticias = async () => {
     try {
       setLoading(true)
+      setError('')
       const datos = await noticiaApi.getNoticias()
-      setNoticias(datos || [])
-    } catch (error) {
-      console.error('Error al cargar noticias:', error)
+      setNoticias(Array.isArray(datos) ? datos : [])
+    } catch (err) {
+      console.error('Error al cargar noticias:', err)
+      setError(err.message || 'No fue posible cargar las noticias.')
+      setNoticias([])
     } finally {
       setLoading(false)
     }
@@ -42,172 +57,110 @@ function GestionNoticias() {
     cargarNoticias()
   }, [])
 
-  const handleTituloChange = (e) => {
-    const tituloVal = e.target.value
-    const slugGenerado = tituloVal
-      .toLowerCase()
-      .trim()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9 -]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-
-    setTarjetaForm(prev => ({
-      ...prev,
-      titulo: tituloVal,
-      slug: slugGenerado
+  const cambiarTitulo = (e) => {
+    const titulo = e.target.value
+    setTarjetaForm((actual) => ({
+      ...actual,
+      titulo,
+      slug: generarSlug(titulo)
     }))
   }
 
-  const procesarArchivoPortada = async (file) => {
-    if (!file || !file.type.startsWith('image/')) {
-      alert('Por favor, selecciona o arrastra un archivo de imagen válido.')
-      return
-    }
-
-    const reader = new FileReader()
-    reader.readAsDataURL(file)
-    reader.onload = async () => {
-      try {
-        const response = await fetch('/api/upload-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nombre: file.name,
-            imagenBase64: reader.result,
-            folder: 'Blog'
-          })
-        })
-
-        const resultado = await response.json()
-        if (resultado.success) {
-          setTarjetaForm(prev => ({ ...prev, imagenPortada: resultado.path }))
-          setPreviewImagen(resultado.path)
-        } else {
-          alert('Error al guardar la imagen en el servidor.')
-        }
-      } catch (error) {
-        console.error('Error de red al subir la imagen:', error)
-      }
-    }
+  const cambiarTarjeta = (campo, valor) => {
+    setTarjetaForm((actual) => ({ ...actual, [campo]: valor }))
   }
 
-  const procesarArchivoSeccion = async (file, index) => {
-    if (!file || !file.type.startsWith('image/')) {
-      alert('Por favor, selecciona un archivo de imagen válido.')
-      return
-    }
-
-    const reader = new FileReader()
-    reader.readAsDataURL(file)
-    reader.onload = async () => {
-      try {
-        const response = await fetch('/api/upload-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nombre: file.name,
-            imagenBase64: reader.result,
-            folder: 'Blog'
-          })
-        })
-
-        const resultado = await response.json()
-        if (resultado.success) {
-          handleCambiarSeccion(index, 'contenido', resultado.path)
-        } else {
-          alert('Error al guardar la imagen de la sección.')
-        }
-      } catch (error) {
-        console.error('Error de red al subir la imagen de la sección:', error)
-      }
-    }
+  const agregarSeccion = (tipo) => {
+    setSecciones((actuales) => [
+      ...actuales,
+      { tipo, contenido: '', caption: '' }
+    ])
   }
 
-  const handleAgregarSeccion = (tipo = 'parrafo') => {
-    setSecciones(prev => [...prev, { tipo, contenido: '', caption: '' }])
-  }
-
-  const handleCambiarSeccion = (index, campo, valor) => {
-    setSecciones(prev => {
-      const copia = [...prev]
-      copia[index][campo] = valor
-      return copia
-    })
-  }
-
-  const handleEliminarSeccion = (index) => {
-    if (secciones.length === 1) {
-      alert('El artículo debe tener al menos una sección de contenido.')
-      return
-    }
-    setSecciones(prev => prev.filter((_, i) => i !== index))
-  }
-
-  const handleSelectNoticia = (noticia) => {
-    setSeleccionada(noticia)
-    const imgPortada = noticia.tarjeta?.imagenPortada || ''
-
-    if (noticia.tarjeta) {
-      setTarjetaForm({
-        titulo: noticia.tarjeta.titulo || '',
-        slug: noticia.tarjeta.slug || '',
-        resumen: noticia.tarjeta.resumen || '',
-        imagenPortada: imgPortada,
-        categoria: noticia.tarjeta.categoria || 'Novedades',
-        autor: noticia.tarjeta.autor || 'Equipo AnimeWord',
-        destacado: Boolean(noticia.tarjeta.destacado)
-      })
-      setPreviewImagen(imgPortada)
-    }
-
-    if (noticia.articulo) {
-      setIntroduccion(noticia.articulo.introduccion || '')
-      setSecciones(
-        noticia.articulo.secciones && noticia.articulo.secciones.length > 0
-          ? noticia.articulo.secciones
-          : [{ tipo: 'parrafo', contenido: '', caption: '' }]
+  const cambiarSeccion = (indice, campo, valor) => {
+    setSecciones((actuales) =>
+      actuales.map((seccion, i) =>
+        i === indice ? { ...seccion, [campo]: valor } : seccion
       )
+    )
+  }
+
+  const eliminarSeccion = (indice) => {
+    if (secciones.length === 1) {
+      alert('El artículo debe tener al menos una sección.')
+      return
     }
+    setSecciones((actuales) => actuales.filter((_, i) => i !== indice))
   }
 
-  const handleLimpiarForm = () => {
-    setSeleccionada(null)
+  const seleccionarNoticia = (noticia) => {
+    setSeleccionada(noticia)
     setTarjetaForm({
-      titulo: '',
-      slug: '',
-      resumen: '',
-      imagenPortada: '',
-      categoria: 'Novedades',
-      autor: 'Equipo AnimeWord',
-      destacado: false
+      titulo: noticia.tarjeta?.titulo || '',
+      slug: noticia.tarjeta?.slug || '',
+      resumen: noticia.tarjeta?.resumen || '',
+      imagenPortada: noticia.tarjeta?.imagenPortada || '',
+      categoria: noticia.tarjeta?.categoria || 'Novedades',
+      autor: noticia.tarjeta?.autor || 'Equipo AnimeWord',
+      destacado: Boolean(noticia.tarjeta?.destacado)
     })
-    setPreviewImagen('')
-    setIntroduccion('')
-    setSecciones([{ tipo: 'parrafo', contenido: '', caption: '' }])
+    setIntroduccion(noticia.articulo?.introduccion || '')
+    setSecciones(
+      noticia.articulo?.secciones?.length
+        ? noticia.articulo.secciones.map((seccion) => ({
+            tipo: seccion.tipo || 'parrafo',
+            contenido: seccion.contenido || '',
+            caption: seccion.caption || ''
+          }))
+        : [{ ...SECCION_INICIAL }]
+    )
+    setError('')
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  const limpiarFormulario = () => {
+    setSeleccionada(null)
+    setTarjetaForm({ ...FORM_INICIAL })
+    setIntroduccion('')
+    setSecciones([{ ...SECCION_INICIAL }])
+    setError('')
+  }
 
-    if (!tarjetaForm.titulo.trim() || !tarjetaForm.imagenPortada.trim()) {
-      alert('Por favor, ingresa un título y una imagen de portada válida.')
+  const guardarNoticia = async (e) => {
+    e.preventDefault()
+    setError('')
+
+    if (!tarjetaForm.titulo.trim() || !tarjetaForm.slug.trim()) {
+      setError('El título de la noticia es obligatorio.')
+      return
+    }
+
+    if (!tarjetaForm.imagenPortada.trim()) {
+      setError('Ingresa la URL de la imagen de portada.')
       return
     }
 
     const payloadDTO = {
-      tarjeta: { ...tarjetaForm },
+      tarjeta: {
+        ...tarjetaForm,
+        titulo: tarjetaForm.titulo.trim(),
+        slug: tarjetaForm.slug.trim()
+      },
       articulo: {
-        introduccion: introduccion,
-        secciones: secciones.filter(sec => sec.contenido.trim() !== '')
+        introduccion,
+        secciones: secciones
+          .filter((seccion) => seccion.contenido.trim() !== '')
+          .map((seccion) => ({
+            ...seccion,
+            tipo: seccion.tipo.toLowerCase()
+          }))
       }
     }
 
     try {
+      setGuardando(true)
+
       if (seleccionada) {
-        const slug = seleccionada.tarjeta?.slug || seleccionada.slug
-        await noticiaApi.updateNoticia(slug, payloadDTO)
+        await noticiaApi.updateNoticia(seleccionada.id, payloadDTO)
         alert('¡Noticia actualizada con éxito!')
       } else {
         await noticiaApi.createNoticia(payloadDTO)
@@ -215,86 +168,135 @@ function GestionNoticias() {
       }
 
       await cargarNoticias()
-      handleLimpiarForm()
-    } catch (error) {
-      console.error('Error al guardar la noticia:', error)
-      alert(`Ocurrió un error: ${error.message || 'Error en la solicitud'}`)
+      limpiarFormulario()
+    } catch (err) {
+      console.error('Error al guardar la noticia:', err)
+      setError(err.message || 'No se pudo guardar la noticia.')
+    } finally {
+      setGuardando(false)
     }
   }
 
-  const handleEliminar = async () => {
+  const eliminarNoticia = async () => {
     if (!seleccionada) return
 
-    const slug = seleccionada.tarjeta?.slug || seleccionada.slug
+    const confirmar = window.confirm(
+      `¿Estás seguro de eliminar la noticia "${seleccionada.tarjeta?.titulo}"?`
+    )
+    if (!confirmar) return
 
-    if (window.confirm(`¿Estás seguro de eliminar la noticia "${seleccionada.tarjeta?.titulo}"?`)) {
-      try {
-        await noticiaApi.deleteNoticia(slug)
-        alert('¡Noticia eliminada correctamente!')
-        await cargarNoticias()
-        handleLimpiarForm()
-      } catch (error) {
-        console.error('Error al eliminar noticia:', error)
-        alert(`No se pudo eliminar: ${error.message || 'Error de red'}`)
-      }
+    try {
+      setGuardando(true)
+      await noticiaApi.deleteNoticia(seleccionada.id)
+      alert('¡Noticia eliminada correctamente!')
+      await cargarNoticias()
+      limpiarFormulario()
+    } catch (err) {
+      console.error('Error al eliminar noticia:', err)
+      setError(err.message || 'No se pudo eliminar la noticia.')
+    } finally {
+      setGuardando(false)
     }
   }
 
   return (
     <div className="container py-4">
-      <div className="d-flex justify-content-between align-items-center mb-4">
+      <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         <h2 className="fw-bold mb-0" style={{ color: '#5d4037' }}>
           Panel de Administración: Noticias & Blog
         </h2>
         <button
+          type="button"
           onClick={() => navigate('/admin')}
           className="btn btn-outline-dark fw-bold shadow-sm"
           style={{ backgroundColor: '#fff', borderColor: '#5d4037', color: '#5d4037' }}
         >
-          🏠 Volver al Admin Home
+          Volver al Admin Home
         </button>
       </div>
+
+      {error && (
+        <div className="alert alert-danger" role="alert">
+          {error}
+        </div>
+      )}
 
       <div className="row g-4">
         <div className="col-12 col-lg-5">
           <div className="card shadow-sm border-0">
-            <div className="card-header text-white d-flex justify-content-between align-items-center" style={{ backgroundColor: '#5d4037' }}>
-              <span className="fw-bold text-uppercase">Publicaciones ({noticias.length})</span>
-              <button className="btn btn-sm btn-light text-dark fw-bold" onClick={handleLimpiarForm}>
+            <div
+              className="card-header text-white d-flex justify-content-between align-items-center"
+              style={{ backgroundColor: '#5d4037' }}
+            >
+              <span className="fw-bold text-uppercase">
+                Publicaciones ({noticias.length})
+              </span>
+              <button
+                type="button"
+                className="btn btn-sm btn-light text-dark fw-bold"
+                onClick={limpiarFormulario}
+              >
                 + Nueva Noticia
               </button>
             </div>
+
             <div className="card-body p-0" style={{ maxHeight: '600px', overflowY: 'auto' }}>
               {loading ? (
                 <div className="text-center py-4 text-muted">Cargando noticias...</div>
               ) : noticias.length === 0 ? (
-                <div className="text-center py-4 text-muted">No hay publicaciones registradas.</div>
+                <div className="text-center py-4 text-muted">
+                  No hay publicaciones registradas.
+                </div>
               ) : (
                 <div className="list-group list-group-flush">
-                  {noticias.map((item, idx) => {
-                    const isSelected = (seleccionada?.id && seleccionada.id === item.id) ||
-                                       (seleccionada?.tarjeta?.slug && seleccionada.tarjeta.slug === item.tarjeta?.slug)
-                    
-                    const imgUrl = item.tarjeta?.imagenPortada || 'https://via.placeholder.com/60'
+                  {noticias.map((item) => {
+                    const seleccionadaActual = seleccionada?.id === item.id
+                    const imagen = item.tarjeta?.imagenPortada
 
                     return (
                       <button
-                        key={item.id || item.tarjeta?.slug || idx}
-                        onClick={() => handleSelectNoticia(item)}
-                        className={`list-group-item list-group-item-action p-3 ${isSelected ? 'bg-light border-start border-4 border-danger' : ''}`}
+                        type="button"
+                        key={item.id}
+                        onClick={() => seleccionarNoticia(item)}
+                        className={`list-group-item list-group-item-action p-3 ${
+                          seleccionadaActual
+                            ? 'bg-light border-start border-4 border-danger'
+                            : ''
+                        }`}
                       >
                         <div className="d-flex align-items-center gap-3">
-                          <img
-                            src={imgUrl}
-                            alt="Portada"
-                            style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }}
-                          />
-                          <div>
-                            <span className="badge bg-secondary mb-1">{item.tarjeta?.categoria || 'Blog'}</span>
-                            <h6 className="mb-0 fw-bold text-truncate" style={{ maxWidth: '220px' }}>
+                          {imagen ? (
+                            <img
+                              src={imagen}
+                              alt="Portada"
+                              style={{
+                                width: '60px',
+                                height: '60px',
+                                objectFit: 'cover',
+                                borderRadius: '8px'
+                              }}
+                            />
+                          ) : (
+                            <div
+                              className="bg-light border rounded d-flex align-items-center justify-content-center"
+                              style={{ width: '60px', height: '60px' }}
+                            >
+                              Sin imagen
+                            </div>
+                          )}
+                          <div className="text-start">
+                            <span className="badge bg-secondary mb-1">
+                              {item.tarjeta?.categoria || 'Blog'}
+                            </span>
+                            <h6
+                              className="mb-0 fw-bold text-truncate"
+                              style={{ maxWidth: '220px' }}
+                            >
                               {item.tarjeta?.titulo || 'Sin título'}
                             </h6>
-                            <small className="text-muted">{item.tarjeta?.autor}</small>
+                            <small className="text-muted">
+                              {item.tarjeta?.autor || 'Equipo AnimeWord'}
+                            </small>
                           </div>
                         </div>
                       </button>
@@ -308,23 +310,43 @@ function GestionNoticias() {
 
         <div className="col-12 col-lg-7">
           <div className="card shadow-sm border-0" style={{ backgroundColor: '#fce4ec' }}>
-            <div className="card-header text-white fw-bold py-2 text-uppercase" style={{ backgroundColor: '#5d4037' }}>
+            <div
+              className="card-header text-white fw-bold py-2 text-uppercase"
+              style={{ backgroundColor: '#5d4037' }}
+            >
               {seleccionada ? 'Editar Publicación' : 'Crear Nueva Publicación'}
             </div>
+
             <div className="card-body">
-              <form onSubmit={handleSubmit}>
-                <h5 className="fw-bold mb-3" style={{ color: '#5d4037' }}>1. Datos de la Tarjeta (Feed)</h5>
+              <form onSubmit={guardarNoticia}>
+                <h5 className="fw-bold mb-3" style={{ color: '#5d4037' }}>
+                  1. Datos de la Tarjeta
+                </h5>
 
                 <div className="mb-3">
-                  <label className="form-label small fw-bold">Título de la Noticia</label>
+                  <label className="form-label small fw-bold">Título de la noticia</label>
                   <input
                     type="text"
                     value={tarjetaForm.titulo}
-                    onChange={handleTituloChange}
+                    onChange={cambiarTitulo}
                     className="form-control border-secondary"
                     placeholder="Ej: La vitrina de Carlos..."
                     required
                   />
+                </div>
+
+                <div className="mb-3">
+                  <label className="form-label small fw-bold">Slug</label>
+                  <input
+                    type="text"
+                    value={tarjetaForm.slug}
+                    onChange={(e) => cambiarTarjeta('slug', generarSlug(e.target.value))}
+                    className="form-control border-secondary"
+                    required
+                  />
+                  <small className="text-muted">
+                    Se genera automáticamente a partir del título.
+                  </small>
                 </div>
 
                 <div className="row g-2 mb-3">
@@ -332,13 +354,14 @@ function GestionNoticias() {
                     <label className="form-label small fw-bold">Categoría</label>
                     <select
                       value={tarjetaForm.categoria}
-                      onChange={(e) => setTarjetaForm({ ...tarjetaForm, categoria: e.target.value })}
+                      onChange={(e) => cambiarTarjeta('categoria', e.target.value)}
                       className="form-select border-secondary"
                     >
                       <option value="Novedades">Novedades</option>
                       <option value="Guías">Guías</option>
                       <option value="Comunidad">Comunidad</option>
                       <option value="Reseñas">Reseñas</option>
+                      <option value="Coleccionismo">Coleccionismo</option>
                     </select>
                   </div>
                   <div className="col-12 col-md-6">
@@ -346,7 +369,7 @@ function GestionNoticias() {
                     <input
                       type="text"
                       value={tarjetaForm.autor}
-                      onChange={(e) => setTarjetaForm({ ...tarjetaForm, autor: e.target.value })}
+                      onChange={(e) => cambiarTarjeta('autor', e.target.value)}
                       className="form-control border-secondary"
                       required
                     />
@@ -354,63 +377,61 @@ function GestionNoticias() {
                 </div>
 
                 <div className="mb-3">
-                  <label className="form-label small fw-bold" style={{ color: '#5d4037' }}>Imagen de Portada</label>
-                  <div 
-                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-                    onDragLeave={() => setIsDragging(false)}
-                    onDrop={(e) => {
-                      e.preventDefault()
-                      setIsDragging(false)
-                      if (e.dataTransfer.files?.[0]) procesarArchivoPortada(e.dataTransfer.files[0])
-                    }}
-                    className={`border border-2 border-dashed rounded-3 p-3 text-center position-relative bg-white ${isDragging ? 'border-dark bg-light' : 'border-secondary'}`}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => document.getElementById('fileInputBlogPortada').click()}
-                  >
-                    <input 
-                      id="fileInputBlogPortada"
-                      type="file" 
-                      accept="image/*" 
-                      className="d-none" 
-                      onChange={(e) => e.target.files?.[0] && procesarArchivoPortada(e.target.files[0])}
+                  <label className="form-label small fw-bold">URL de imagen de portada</label>
+                  <input
+                    type="url"
+                    value={tarjetaForm.imagenPortada}
+                    onChange={(e) => cambiarTarjeta('imagenPortada', e.target.value)}
+                    className="form-control border-secondary"
+                    placeholder="https://..."
+                    required
+                  />
+                  {tarjetaForm.imagenPortada && (
+                    <img
+                      src={tarjetaForm.imagenPortada}
+                      alt="Vista previa de portada"
+                      className="mt-2 rounded border"
+                      style={{ maxWidth: '150px', maxHeight: '120px', objectFit: 'cover' }}
+                      onError={(e) => { e.currentTarget.style.display = 'none' }}
+                      onLoad={(e) => { e.currentTarget.style.display = 'block' }}
                     />
-
-                    {previewImagen ? (
-                      <div className="d-flex align-items-center justify-content-center gap-3">
-                        <img 
-                          src={previewImagen} 
-                          alt="Vista previa" 
-                          style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }} 
-                          className="border border-secondary shadow-sm"
-                        />
-                        <div className="text-start">
-                          <span className="small text-success fw-bold d-block">Imagen cargada correctamente</span>
-                          <span className="small text-muted">{tarjetaForm.imagenPortada}</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="py-2 text-muted">
-                        <p className="mb-0 small fw-bold">Arrastra una imagen aquí o haz clic para seleccionarla</p>
-                      </div>
-                    )}
-                  </div>
+                  )}
+                  <small className="text-muted d-block mt-1">
+                    Por ahora se utiliza una URL. La subida de archivos desde el computador
+                    se incorporará cuando creemos el endpoint de imágenes en Spring Boot.
+                  </small>
                 </div>
 
                 <div className="mb-3">
                   <label className="form-label small fw-bold">Resumen corto</label>
                   <textarea
                     value={tarjetaForm.resumen}
-                    onChange={(e) => setTarjetaForm({ ...tarjetaForm, resumen: e.target.value })}
+                    onChange={(e) => cambiarTarjeta('resumen', e.target.value)}
                     className="form-control border-secondary"
                     rows="2"
                     placeholder="Breve vista previa para el listado..."
                     required
-                  ></textarea>
+                  />
+                </div>
+
+                <div className="form-check form-switch mb-4">
+                  <input
+                    id="noticiaDestacada"
+                    type="checkbox"
+                    checked={tarjetaForm.destacado}
+                    onChange={(e) => cambiarTarjeta('destacado', e.target.checked)}
+                    className="form-check-input"
+                  />
+                  <label className="form-check-label fw-bold" htmlFor="noticiaDestacada">
+                    Mostrar como noticia destacada
+                  </label>
                 </div>
 
                 <hr className="my-4" />
 
-                <h5 className="fw-bold mb-3" style={{ color: '#5d4037' }}>2. Cuerpo del Artículo</h5>
+                <h5 className="fw-bold mb-3" style={{ color: '#5d4037' }}>
+                  2. Cuerpo del artículo
+                </h5>
 
                 <div className="mb-3">
                   <label className="form-label small fw-bold">Introducción</label>
@@ -418,81 +439,81 @@ function GestionNoticias() {
                     value={introduccion}
                     onChange={(e) => setIntroduccion(e.target.value)}
                     className="form-control border-secondary"
-                    rows="2"
+                    rows="3"
                     placeholder="Párrafo introductorio..."
-                  ></textarea>
+                  />
                 </div>
 
                 <div className="mb-3">
-                  <div className="d-flex justify-content-between align-items-center mb-2">
-                    <label className="form-label small fw-bold mb-0">Bloques de Contenido</label>
+                  <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                    <label className="form-label small fw-bold mb-0">
+                      Bloques de contenido
+                    </label>
                     <div className="btn-group btn-group-sm">
-                      <button type="button" className="btn btn-outline-dark" onClick={() => handleAgregarSeccion('parrafo')}>
+                      <button type="button" className="btn btn-outline-dark" onClick={() => agregarSeccion('parrafo')}>
                         + Párrafo
                       </button>
-                      <button type="button" className="btn btn-outline-dark" onClick={() => handleAgregarSeccion('subtitulo')}>
+                      <button type="button" className="btn btn-outline-dark" onClick={() => agregarSeccion('subtitulo')}>
                         + Subtítulo
                       </button>
-                      <button type="button" className="btn btn-outline-dark" onClick={() => handleAgregarSeccion('imagen')}>
+                      <button type="button" className="btn btn-outline-dark" onClick={() => agregarSeccion('imagen')}>
                         + Imagen
                       </button>
                     </div>
                   </div>
 
-                  {secciones.map((sec, idx) => (
-                    <div key={idx} className="card p-2 mb-2 border-secondary bg-white">
+                  {secciones.map((seccion, indice) => (
+                    <div key={indice} className="card p-2 mb-2 border-secondary bg-white">
                       <div className="d-flex justify-content-between align-items-center mb-2">
-                        <span className="badge bg-dark text-uppercase">{sec.tipo} #{idx + 1}</span>
+                        <span className="badge bg-dark text-uppercase">
+                          {seccion.tipo} #{indice + 1}
+                        </span>
                         <button
                           type="button"
                           className="btn btn-sm btn-outline-danger py-0 px-2 fw-bold"
-                          onClick={() => handleEliminarSeccion(idx)}
+                          onClick={() => eliminarSeccion(indice)}
                         >
-                          ✕
+                          Eliminar
                         </button>
                       </div>
 
-                      {sec.tipo === 'imagen' ? (
-                        <div className="mb-2">
-                          <div 
-                            className="border border-2 border-dashed rounded-2 p-2 text-center bg-light"
-                            style={{ cursor: 'pointer', fontSize: '0.85rem' }}
-                            onClick={() => document.getElementById(`fileInputSeccion_${idx}`).click()}
-                          >
-                            <input 
-                              id={`fileInputSeccion_${idx}`}
-                              type="file" 
-                              accept="image/*" 
-                              className="d-none" 
-                              onChange={(e) => e.target.files?.[0] && procesarArchivoSeccion(e.target.files[0], idx)}
+                      {seccion.tipo === 'imagen' ? (
+                        <>
+                          <label className="form-label small">URL de la imagen</label>
+                          <input
+                            type="url"
+                            value={seccion.contenido}
+                            onChange={(e) => cambiarSeccion(indice, 'contenido', e.target.value)}
+                            className="form-control form-control-sm border-secondary mb-2"
+                            placeholder="https://..."
+                          />
+                          {seccion.contenido && (
+                            <img
+                              src={seccion.contenido}
+                              alt={seccion.caption || 'Imagen del artículo'}
+                              className="img-fluid rounded mb-2"
+                              style={{ maxHeight: '180px', objectFit: 'contain' }}
                             />
-                            {sec.contenido ? (
-                              <div className="d-flex align-items-center gap-2">
-                                <img src={sec.contenido} alt="Sección" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
-                                <span className="text-success text-truncate small">Cargada: {sec.contenido}</span>
-                              </div>
-                            ) : (
-                              <span className="text-muted fw-bold">Haz clic o arrastra una imagen para este bloque</span>
-                            )}
-                          </div>
-                        </div>
+                          )}
+                          <input
+                            type="text"
+                            value={seccion.caption || ''}
+                            onChange={(e) => cambiarSeccion(indice, 'caption', e.target.value)}
+                            className="form-control form-control-sm border-secondary"
+                            placeholder="Pie de foto opcional..."
+                          />
+                        </>
                       ) : (
                         <textarea
-                          value={sec.contenido}
-                          onChange={(e) => handleCambiarSeccion(idx, 'contenido', e.target.value)}
-                          className="form-control form-control-sm border-secondary mb-1"
-                          rows={sec.tipo === 'parrafo' ? 2 : 1}
-                          placeholder={sec.tipo === 'parrafo' ? 'Escribe el párrafo...' : 'Escribe el subtítulo...'}
-                        ></textarea>
-                      )}
-
-                      {sec.tipo === 'imagen' && (
-                        <input
-                          type="text"
-                          value={sec.caption || ''}
-                          onChange={(e) => handleCambiarSeccion(idx, 'caption', e.target.value)}
-                          className="form-control form-control-sm border-secondary mt-1"
-                          placeholder="Pie de foto opcional..."
+                          value={seccion.contenido}
+                          onChange={(e) => cambiarSeccion(indice, 'contenido', e.target.value)}
+                          className="form-control form-control-sm border-secondary"
+                          rows={seccion.tipo === 'parrafo' ? 3 : 1}
+                          placeholder={
+                            seccion.tipo === 'parrafo'
+                              ? 'Escribe el párrafo...'
+                              : 'Escribe el subtítulo...'
+                          }
                         />
                       )}
                     </div>
@@ -500,17 +521,35 @@ function GestionNoticias() {
                 </div>
 
                 <div className="d-grid gap-2 mt-4">
-                  <button type="submit" className="btn text-white fw-bold py-2" style={{ backgroundColor: '#5d4037' }}>
-                    {seleccionada ? 'Guardar Cambios' : 'Publicar Noticia'}
+                  <button
+                    type="submit"
+                    disabled={guardando}
+                    className="btn text-white fw-bold py-2"
+                    style={{ backgroundColor: '#5d4037' }}
+                  >
+                    {guardando
+                      ? 'Guardando...'
+                      : seleccionada
+                        ? 'Guardar cambios'
+                        : 'Publicar noticia'}
                   </button>
 
                   {seleccionada && (
                     <>
-                      <button type="button" className="btn btn-danger fw-bold py-2" onClick={handleEliminar}>
-                        Eliminar Publicación
+                      <button
+                        type="button"
+                        disabled={guardando}
+                        className="btn btn-danger fw-bold py-2"
+                        onClick={eliminarNoticia}
+                      >
+                        Eliminar publicación
                       </button>
-                      <button type="button" className="btn btn-outline-secondary btn-sm" onClick={handleLimpiarForm}>
-                        Cancelar Selección
+                      <button
+                        type="button"
+                        className="btn btn-outline-secondary btn-sm"
+                        onClick={limpiarFormulario}
+                      >
+                        Cancelar selección
                       </button>
                     </>
                   )}
